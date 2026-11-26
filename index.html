@@ -201,6 +201,26 @@
   .modal-note { font-size: 11px; color: var(--text2); text-align: center; margin-top: 12px; line-height: 1.5; }
 
   .footer-note { text-align: center; font-size: 11px; color: var(--text2); margin-top: 40px; line-height: 1.6; }
+  .consent { display:flex; gap:10px; align-items:flex-start; margin:14px 0 4px; font-size:12px; line-height:1.5; color:var(--text); cursor:pointer; }
+  .consent input { margin-top:3px; width:18px; height:18px; accent-color:var(--accent); flex-shrink:0; }
+  .consent a, .alt-link { color:var(--accent2); text-decoration:underline; cursor:pointer; background:none; border:0; font:inherit; padding:0; }
+  .alt-link { display:block; margin:12px auto 0; font-size:11px; color:var(--text2); }
+  #contrato-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:200; align-items:center; justify-content:center; padding:12px; }
+  #contrato-overlay.active { display:flex; }
+  #contrato-box { background:var(--card); border:1px solid var(--border); border-radius:var(--r); width:100%; max-width:640px; max-height:92vh; display:flex; flex-direction:column; overflow:hidden; }
+  #contrato-head { padding:14px 18px; border-bottom:1px solid var(--border); font-weight:700; font-size:14px; display:flex; justify-content:space-between; align-items:center; }
+  #contrato-body { padding:16px 18px; overflow-y:auto; font-size:12.5px; line-height:1.6; color:#ddd; flex:1; }
+  #contrato-body h2 { font-size:15px; margin-bottom:6px; color:var(--accent2); }
+  #contrato-body h3 { font-size:13px; margin:14px 0 4px; color:var(--accent2); }
+  #contrato-body p { margin-bottom:6px; }
+  #contrato-foot { padding:12px 18px; border-top:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap; }
+  #contrato-foot button { flex:1; min-width:140px; padding:12px; border-radius:var(--r-sm); border:1px solid var(--border); background:var(--card2); color:var(--text); font-weight:700; cursor:pointer; font-family:inherit; }
+  #contrato-foot button.primary { background:var(--accent); color:#000; border-color:var(--accent); }
+  #contrato-foot button:disabled { opacity:.45; cursor:not-allowed; }
+  #contrato-ask { display:none; padding:14px 18px; border-top:1px solid var(--border); font-size:13px; }
+  #contrato-ask .row { display:flex; gap:8px; margin-top:10px; }
+  #contrato-ask button { flex:1; padding:11px; border-radius:var(--r-sm); border:1px solid var(--border); background:var(--card2); color:var(--text); font-weight:700; cursor:pointer; font-family:inherit; }
+  #contrato-ask button.primary { background:var(--accent); color:#000; border-color:var(--accent); }
 </style>
 </head>
 <body>
@@ -252,10 +272,45 @@
         <input id="f-telefone" placeholder="(48) 99999-9999" autocomplete="tel">
       </div>
 
-      <button class="modal-submit" id="btn-submit" onclick="submitLead()">
+      <div class="field">
+        <label>CPF ou CNPJ</label>
+        <input id="f-documento" placeholder="Somente números" inputmode="numeric" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>E-mail</label>
+        <input id="f-email" type="email" placeholder="voce@empresa.com" autocomplete="email">
+      </div>
+
+      <label class="consent">
+        <input type="checkbox" id="f-acepta" onclick="clickAceite(event)">
+        <span>Li e aceito o <a onclick="abrirContrato(event)">contrato de prestação de serviços</a>, incluindo a permanência mínima de 3 meses e a multa por descumprimento.</span>
+      </label>
+      <div class="modal-note" id="copia-estado" style="text-align:left;margin-top:4px"></div>
+
+      <button class="modal-submit" id="btn-submit" onclick="submitLead()" disabled>
         Ir para o pagamento →
       </button>
       <div class="modal-note">Você será redirecionado ao Mercado Pago para concluir a assinatura.</div>
+      <button class="alt-link" type="button" onclick="submitSinAceite()">Não consigo aceitar na tela? Receber o contrato por e-mail para assinar</button>
+    </div>
+  </div>
+
+  <!-- Contrato -->
+  <div id="contrato-overlay">
+    <div id="contrato-box">
+      <div id="contrato-head"><span>Contrato de prestação de serviços</span><button class="modal-close" onclick="cerrarContrato(false)">✕</button></div>
+      <div id="contrato-body">Carregando contrato...</div>
+      <div id="contrato-ask">
+        <b>Deseja que enviemos uma cópia do contrato para o seu e-mail?</b>
+        <div class="row">
+          <button class="primary" onclick="finalizarAceite(true)">Sim, enviar cópia</button>
+          <button onclick="finalizarAceite(false)">Não, obrigado</button>
+        </div>
+      </div>
+      <div id="contrato-foot">
+        <button onclick="cerrarContrato(false)">Fechar sem aceitar</button>
+        <button class="primary" id="btn-aceptar" onclick="aceptarContrato()" disabled>Li e aceito</button>
+      </div>
     </div>
   </div>
 
@@ -268,6 +323,8 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let planesCache = [];
 let planSeleccionado = null;
+let copiaSolicitada = false;
+let contratoCargado = false;
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -320,6 +377,12 @@ function abrirFormulario(codigo) {
   document.getElementById('f-nombre').value = '';
   document.getElementById('f-empresa').value = '';
   document.getElementById('f-telefone').value = '';
+  document.getElementById('f-documento').value = '';
+  document.getElementById('f-email').value = '';
+  document.getElementById('f-acepta').checked = false;
+  document.getElementById('btn-submit').disabled = true;
+  document.getElementById('copia-estado').textContent = '';
+  copiaSolicitada = false;
   document.getElementById('modal-overlay').classList.add('active');
   document.body.style.overflow = 'hidden';
 }
@@ -338,43 +401,124 @@ function mostrarError(msg) {
   el.style.display = 'block';
 }
 
+// --- Contrato ---
+async function abrirContrato(ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const body = document.getElementById('contrato-body');
+  document.getElementById('contrato-ask').style.display = 'none';
+  document.getElementById('contrato-foot').style.display = 'flex';
+  document.getElementById('contrato-overlay').classList.add('active');
+  document.getElementById('btn-aceptar').disabled = true;
+  body.scrollTop = 0;
+  if (!contratoCargado) {
+    const { data, error } = await sb.from('contrato_versiones').select('texto_html').eq('vigente', true).maybeSingle();
+    if (error || !data) { body.textContent = 'Não foi possível carregar o contrato agora. Tente novamente ou fale conosco: alastecno24@gmail.com'; return; }
+    body.innerHTML = data.texto_html + (planSeleccionado ? `<hr><h3>Plano escolhido</h3><p>${esc(planSeleccionado.nombre)} — R$ ${fmtBRL(planSeleccionado.precio_brl)}/mês, permanência mínima de 3 meses.</p><p>${esc(planSeleccionado.descripcion)}</p>` : '');
+    contratoCargado = true;
+  }
+  habilitarAceite();
+  body.onscroll = habilitarAceite;
+}
+function habilitarAceite() {
+  const b = document.getElementById('contrato-body');
+  if (b.scrollTop + b.clientHeight >= b.scrollHeight - 24) document.getElementById('btn-aceptar').disabled = false;
+}
+function clickAceite(ev) {
+  // La casilla siempre abre el contrato; solo queda marcada tras aceptarlo.
+  ev.preventDefault();
+  abrirContrato();
+}
+function cerrarContrato() {
+  document.getElementById('contrato-overlay').classList.remove('active');
+}
+function aceptarContrato() {
+  document.getElementById('contrato-foot').style.display = 'none';
+  document.getElementById('contrato-ask').style.display = 'block';
+}
+function finalizarAceite(copia) {
+  copiaSolicitada = copia;
+  document.getElementById('f-acepta').checked = true;
+  document.getElementById('btn-submit').disabled = false;
+  document.getElementById('copia-estado').textContent = copia ? '✓ Enviaremos uma cópia do contrato para o seu e-mail.' : '';
+  cerrarContrato();
+}
+
+function leerDatos() {
+  return {
+    nombre:   document.getElementById('f-nombre').value.trim(),
+    empresa:  document.getElementById('f-empresa').value.trim(),
+    telefone: document.getElementById('f-telefone').value.trim(),
+    documento: document.getElementById('f-documento').value.replace(/\D/g, ''),
+    email:    document.getElementById('f-email').value.trim()
+  };
+}
+function validar(d) {
+  if (d.nombre.length < 3) return 'Informe seu nome completo.';
+  if (d.telefone.replace(/\D/g, '').length < 10) return 'Informe seu WhatsApp com DDD.';
+  if (![11, 14].includes(d.documento.length)) return 'Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido.';
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) return 'Informe um e-mail válido.';
+  if (!planSeleccionado) return 'Selecione um plano.';
+  return null;
+}
+
+async function registrar(metodo, copia) {
+  const d = leerDatos();
+  const err = validar(d);
+  if (err) { mostrarError(err); return null; }
+  const { data, error } = await sb.rpc('crear_suscripcion_con_contrato', {
+    p_nombre: d.nombre, p_empresa: d.empresa, p_telefono: d.telefone,
+    p_plan_codigo: planSeleccionado.codigo, p_documento: d.documento, p_email: d.email,
+    p_acepta: metodo === 'checkbox_pantalla', p_copia: copia, p_metodo: metodo
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error('Não foi possível processar (' + data.error + '). Confira os dados e tente novamente.');
+  // Envío del correo: no bloquea el flujo de pago.
+  const envio = fetch(`${SUPABASE_URL}/functions/v1/enviar-contrato`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
+    body: JSON.stringify({ suscripcion_id: data.suscripcion_id }),
+    keepalive: true
+  }).catch(() => {});
+  return { data, envio };
+}
+
 async function submitLead() {
-  const nombre   = document.getElementById('f-nombre').value.trim();
-  const empresa  = document.getElementById('f-empresa').value.trim();
-  const telefone = document.getElementById('f-telefone').value.trim();
   const btn = document.getElementById('btn-submit');
-
-  if (!nombre)   { mostrarError('Informe seu nome.'); return; }
-  if (!telefone) { mostrarError('Informe seu WhatsApp.'); return; }
-  if (!planSeleccionado) { mostrarError('Selecione um plano.'); return; }
-
+  if (!document.getElementById('f-acepta').checked) { mostrarError('Leia e aceite o contrato para continuar.'); return; }
+  document.getElementById('modal-error').style.display = 'none';
   btn.disabled = true;
   btn.textContent = 'Processando...';
-
   try {
-    const { data, error } = await sb.rpc('crear_lead_suscripcion', {
-      p_nombre: nombre,
-      p_empresa: empresa,
-      p_telefono: telefone,
-      p_plan_codigo: planSeleccionado.codigo
-    });
-
-    if (error) throw new Error(error.message);
-    if (data?.error) throw new Error('Não foi possível processar. Tente novamente.');
-
+    const r = await registrar('checkbox_pantalla', copiaSolicitada);
+    if (!r) { btn.disabled = false; btn.textContent = 'Ir para o pagamento →'; return; }
+    const data = r.data;
     localStorage.setItem(LOCAL_KEY, JSON.stringify({
       suscripcion_id: data.suscripcion_id,
       cliente_id: data.cliente_id,
       plan: data.plan_codigo,
-      creado_en: Date.now()
+      creado_en: Date.now(),
+      copia: copiaSolicitada
     }));
-
     window.location.href = data.mp_checkout_url;
-
   } catch (e) {
     mostrarError('Erro: ' + e.message);
     btn.disabled = false;
     btn.textContent = 'Ir para o pagamento →';
+  }
+}
+
+// Plan B: el dispositivo no permite aceptar en pantalla -> contrato por e-mail para firmar y reenviar.
+async function submitSinAceite() {
+  document.getElementById('modal-error').style.display = 'none';
+  try {
+    const r = await registrar('email_firma_pendiente', true);
+    if (!r) return;
+    document.getElementById('modal-box').innerHTML = `
+      <div class="modal-title" style="margin-bottom:12px">Contrato enviado</div>
+      <p style="font-size:13px;line-height:1.6">Enviamos uma cópia do contrato para o seu e-mail. Assine e envie para <b>alastecno24@gmail.com</b>. Assim que recebermos, enviaremos o link de pagamento.</p>
+      <button class="modal-submit" style="margin-top:16px" onclick="location.reload()">Fechar</button>`;
+  } catch (e) {
+    mostrarError('Erro: ' + e.message);
   }
 }
 
